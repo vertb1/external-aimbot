@@ -5,117 +5,154 @@
 
 namespace offset
 {
-	// client
-	constexpr ::std::ptrdiff_t dwLocalPlayer = 0xDB25DC;
-	constexpr ::std::ptrdiff_t dwEntityList = 0x4DCDE7C;
-
-	// engine
-	constexpr ::std::ptrdiff_t dwClientState = 0x58CFC4;
-	constexpr ::std::ptrdiff_t dwClientState_ViewAngles = 0x4D90;
-	constexpr ::std::ptrdiff_t dwClientState_GetLocalPlayer = 0x180;
-
-	// entity
-	constexpr ::std::ptrdiff_t m_dwBoneMatrix = 0x26A8;
-	constexpr ::std::ptrdiff_t m_bDormant = 0xED;
-	constexpr ::std::ptrdiff_t m_iTeamNum = 0xF4;
-	constexpr ::std::ptrdiff_t m_lifeState = 0x25F;
-	constexpr ::std::ptrdiff_t m_vecOrigin = 0x138;
-	constexpr ::std::ptrdiff_t m_vecViewOffset = 0x108;
-	constexpr ::std::ptrdiff_t m_aimPunchAngle = 0x303C;
-	constexpr ::std::ptrdiff_t m_bSpottedByMask = 0x980;
+    // Roblox offsets from your list
+    constexpr ::std::ptrdiff_t RenderToEngine = 0x10;
+    constexpr ::std::ptrdiff_t RenderToFakeDataModel = 0x120;
+    constexpr ::std::ptrdiff_t FakeDataModelToRealDataModel = 0x1b8;
+    constexpr ::std::ptrdiff_t Name = 0x70;
+    constexpr ::std::ptrdiff_t Children = 0x78;
+    constexpr ::std::ptrdiff_t Parent = 0x50;
+    constexpr ::std::ptrdiff_t ChildSize = 0x8;
+    constexpr ::std::ptrdiff_t LocalPlayer = 0x120;
+    constexpr ::std::ptrdiff_t ModelInstance = 0x2e0;
+    constexpr ::std::ptrdiff_t Team = 0x210;
+    constexpr ::std::ptrdiff_t Health = 0x194;
+    constexpr ::std::ptrdiff_t BasePartPosition = 0x140;
+    constexpr ::std::ptrdiff_t CFrame = 0x11c;
+    constexpr ::std::ptrdiff_t CurrentCamera = 0x3f0;
+    constexpr ::std::ptrdiff_t CameraPosition = 0x104;
+    constexpr ::std::ptrdiff_t CameraRotation = 0xe0;
 }
 
 Vector3 CalculateAngle(
-	const Vector3& localPosition,
-	const Vector3& enemyPosition,
-	const Vector3& viewAngles) noexcept
+    const Vector3& localPosition,
+    const Vector3& enemyPosition,
+    const Vector3& viewAngles) noexcept
 {
-	return ((enemyPosition - localPosition).ToAngle() - viewAngles);
+    return ((enemyPosition - localPosition).ToAngle() - viewAngles);
 }
 
 int main()
 {
-	// initialize memory class
-	const auto memory = Memory{ "csgo.exe" };
+    // Initialize memory class with Roblox process
+    const auto memory = Memory("RobloxPlayerBeta.exe");
 
-	// module addresses
-	const auto client = memory.GetModuleAddress("client.dll");
-	const auto engine = memory.GetModuleAddress("engine.dll");
+    // Get the Roblox module address
+    const auto robloxBase = memory.GetModuleAddress("RobloxPlayerBeta.exe");
 
-	// infinite hack loop
-	while (true)
-	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    if (!robloxBase) {
+        return 1; // Exit if Roblox isn't running
+    }
 
-		// aimbot key
-		if (!GetAsyncKeyState(VK_RBUTTON))
-			continue;
+    // Infinite hack loop
+    while (true)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-		// get local player
-		const auto localPlayer = memory.Read<std::uintptr_t>(client + offset::dwLocalPlayer);
-		const auto localTeam = memory.Read<std::int32_t>(localPlayer + offset::m_iTeamNum);
+        // Aimbot key
+        if (!GetAsyncKeyState(VK_RBUTTON))
+            continue;
 
-		// eye position = origin + viewOffset
-		const auto localEyePosition = memory.Read<Vector3>(localPlayer + offset::m_vecOrigin) +
-			memory.Read<Vector3>(localPlayer + offset::m_vecViewOffset);
+        // Get the render address - this is an example method, you may need to adjust
+        // This assumes there's a static address pointing to the render object
+        const auto renderAddress = memory.Read<std::uintptr_t>(robloxBase + 0x2000000); // Example offset
 
-		const auto clientState = memory.Read<std::uintptr_t>(engine + offset::dwClientState);
+        if (!renderAddress)
+            continue;
 
-		const auto localPlayerId =
-			memory.Read<std::int32_t>(clientState + offset::dwClientState_GetLocalPlayer);
+        // Navigate to data model
+        const auto fakeDataModel = memory.Read<std::uintptr_t>(renderAddress + offset::RenderToFakeDataModel);
+        const auto dataModel = memory.Read<std::uintptr_t>(fakeDataModel + offset::FakeDataModelToRealDataModel);
 
-		const auto viewAngles = memory.Read<Vector3>(clientState + offset::dwClientState_ViewAngles);
-		const auto aimPunch = memory.Read<Vector3>(localPlayer + offset::m_aimPunchAngle) * 2;
+        if (!dataModel)
+            continue;
 
-		// aimbot fov
-		auto bestFov = 5.f;
-		auto bestAngle = Vector3{ };
+        // Get local player
+        const auto localPlayer = memory.Read<std::uintptr_t>(dataModel + offset::LocalPlayer);
 
-		for (auto i = 1; i <= 32; ++i)
-		{
-			const auto player = memory.Read<std::uintptr_t>(client + offset::dwEntityList + i * 0x10);
+        if (!localPlayer)
+            continue;
 
-			if (memory.Read<std::int32_t>(player + offset::m_iTeamNum) == localTeam)
-				continue;
+        // Get local player model and team
+        const auto localModel = memory.Read<std::uintptr_t>(localPlayer + offset::ModelInstance);
+        const auto localTeam = memory.Read<std::int32_t>(localPlayer + offset::Team);
 
-			if (memory.Read<bool>(player + offset::m_bDormant))
-				continue;
+        // Get head position
+        const auto localHead = memory.Read<std::uintptr_t>(localModel + 0x150); // Example offset to head
+        const auto localPosition = memory.Read<Vector3>(localHead + offset::BasePartPosition);
 
-			if (memory.Read<std::int32_t>(player + offset::m_lifeState))
-				continue;
+        // Get camera
+        const auto camera = memory.Read<std::uintptr_t>(dataModel + offset::CurrentCamera);
+        const auto cameraPosition = memory.Read<Vector3>(camera + offset::CameraPosition);
+        const auto cameraRotation = memory.Read<Vector3>(camera + offset::CameraRotation);
 
-			if (memory.Read<std::int32_t>(player + offset::m_bSpottedByMask) & (1 << localPlayerId))
-			{
-				const auto boneMatrix = memory.Read<std::uintptr_t>(player + offset::m_dwBoneMatrix);
+        // Aimbot FOV
+        auto bestFov = 5.f;
+        auto bestAngle = Vector3{ };
 
-				// pos of player head in 3d space
-				// 8 is the head bone index :)
-				const auto playerHeadPosition = Vector3{
-					memory.Read<float>(boneMatrix + 0x30 * 8 + 0x0C),
-					memory.Read<float>(boneMatrix + 0x30 * 8 + 0x1C),
-					memory.Read<float>(boneMatrix + 0x30 * 8 + 0x2C)
-				};
+        // Get workspace
+        const auto workspace = memory.Read<std::uintptr_t>(dataModel + 0x28); // Example offset to workspace
 
-				const auto angle = CalculateAngle(
-					localEyePosition,
-					playerHeadPosition,
-					viewAngles + aimPunch
-				);
+        // Get workspace children (players)
+        const auto childrenPtr = memory.Read<std::uintptr_t>(workspace + offset::Children);
+        const auto childrenCount = memory.Read<int>(childrenPtr + 0x4); // Assuming size is at offset +4
 
-				const auto fov = std::hypot(angle.x, angle.y);
+        for (int i = 0; i < childrenCount; i++)
+        {
+            const auto childPtr = memory.Read<std::uintptr_t>(childrenPtr + 0x8 + i * offset::ChildSize);
 
-				if (fov < bestFov)
-				{
-					bestFov = fov;
-					bestAngle = angle;
-				}
-			}
-		}
+            if (!childPtr)
+                continue;
 
-		// if we have a best angle, do aimbot
-		if (!bestAngle.IsZero())
-			memory.Write<Vector3>(clientState + offset::dwClientState_ViewAngles, viewAngles + bestAngle / 3.f); // smoothing
-	}
+            // Check if it's a player - this needs to be refined based on Roblox's structure
+            // This is just a placeholder approach
+            const auto childName = memory.Read<std::uintptr_t>(childPtr + offset::Name);
 
-	return 0;
+            // Get player attributes
+            const auto childTeam = memory.Read<std::int32_t>(childPtr + offset::Team);
+            const auto childHealth = memory.Read<float>(childPtr + offset::Health);
+
+            // Skip players on same team or dead players
+            if (childTeam == localTeam || childHealth <= 0)
+                continue;
+
+            // Get player's model
+            const auto childModel = memory.Read<std::uintptr_t>(childPtr + offset::ModelInstance);
+
+            if (!childModel)
+                continue;
+
+            // Get head part
+            const auto head = memory.Read<std::uintptr_t>(childModel + 0x150); // Example offset to head
+
+            if (!head)
+                continue;
+
+            const auto headPosition = memory.Read<Vector3>(head + offset::BasePartPosition);
+
+            // Calculate angle for aimbot
+            const auto angle = CalculateAngle(
+                cameraPosition,
+                headPosition,
+                cameraRotation
+            );
+
+            const auto fov = std::hypot(angle.x, angle.y);
+
+            if (fov < bestFov)
+            {
+                bestFov = fov;
+                bestAngle = angle;
+            }
+        }
+
+        // If we have a best angle, do aimbot
+        if (!bestAngle.IsZero())
+        {
+            // Write to camera rotation
+            memory.Write<Vector3>(camera + offset::CameraRotation, cameraRotation + bestAngle / 3.f); // Smoothing
+        }
+    }
+
+    return 0;
 }
